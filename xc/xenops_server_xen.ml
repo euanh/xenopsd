@@ -942,15 +942,16 @@ module VM = struct
 				| HVM hvm_info ->
 					let disks = List.filter_map (fun vbd ->
 						let id = vbd.Vbd.id in
-						if hvm_info.Vm.qemu_disk_cmdline && (List.mem_assoc id qemu_vbds)
+						if (* hvm_info.Vm.qemu_disk_cmdline && *) (List.mem_assoc id qemu_vbds)
 						then
 							let index, bd = List.assoc id qemu_vbds in
 							let path = block_device_of_vbd_frontend bd in
 							let media =
 								if vbd.Vbd.ty = Vbd.Disk
 								then Device.Dm.Disk else Device.Dm.Cdrom in
+							debug "EDH: found some disks";
 							Some (index, path, media)
-						else None
+						else (debug "EDH: no disks"; debug "EDH: qemu_disk_cmdline: %s" (if hvm_info.Vm.qemu_disk_cmdline then "true" else "false"); debug "EDH: (List.mem_assoc id qemu_vbds): %b" (List.mem_assoc id qemu_vbds); None)
 					) vbds in
 					let usb_enabled =
 						try (List.assoc "usb" vm.Vm.platformdata) = "true"

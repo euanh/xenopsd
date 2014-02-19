@@ -826,6 +826,7 @@ let is_vncterm_running ~xs domid =
 			with _ -> false
 
 let get_vnc_port ~xs domid =
+	debug "EDH: get_vnc_port 1"; 
 	if not (is_vncterm_running ~xs domid)
 	then None
 	else (try Some(int_of_string (xs.Xs.read (Generic.vnc_port_path domid))) with _ -> None)
@@ -908,6 +909,7 @@ module Qemu = struct
 	let pid ~xs domid =
 		try
 			let pid = xs.Xs.read (qemu_pid_path domid) in
+			debug "EDH: Qemu.pid = %s" pid;
 			Some (int_of_string pid)
 		with _ ->
 			None
@@ -1566,6 +1568,8 @@ type info = {
 
 
 let get_vnc_port ~xs domid =
+	debug "EDH: get_vnc_port 2"; 
+	debug "EDH: Qemu.is_running: %b" (Qemu.is_running ~xs domid);
 	if not (Qemu.is_running ~xs domid)
 	then None
 	else (try Some(int_of_string (xs.Xs.read (Generic.vnc_port_path domid))) with _ -> None)
@@ -1605,9 +1609,9 @@ let xenclient_specific ~xs info ~qemu_domid domid =
       | Some device -> [ "-soundhw"; device ]
   in
 
-  ["-videoram"; string_of_int info.video_mib;
+  (* ["-videoram"; string_of_int info.video_mib;
    "-M"; (if info.hvm then "xenfv" else "xenpv")] 
-  @ sound_options
+  @ *) sound_options
    
 let signal (task: Xenops_task.t) ~xs ~qemu_domid ~domid ?wait_for ?param cmd =
 	let cmdpath = device_model_path ~qemu_domid domid in
@@ -1638,10 +1642,10 @@ let get_state ~xs ~qemu_domid domid =
 let cmdline_of_disp info =
 	let vga_type_opts x = 
 	  match x with
-	    | Std_vga -> ["-std-vga"]
+	    | Std_vga -> ["-vga"; "std"]
 	    | Cirrus -> []
 	in
-	let videoram_opt = ["-videoram"; string_of_int info.video_mib] in
+	let videoram_opt = [] (* ["-videoram"; string_of_int info.video_mib] *) in
 	let dom0_input_opts = function
 		| None -> []
 		| Some i -> ["-dom0-input"; string_of_int i]
@@ -1661,7 +1665,7 @@ let cmdline_of_disp info =
 		    let vga_type_opts = vga_type_opts disp_intf in
 		    let vnc_opts = 
 		      if auto
-		      then [ "-vncunused"; "-k"; keymap; "-vnc"; ip_addr ^ ":1" ]
+		      then [ "-vnc"; "none"; "-k"; keymap; "-vnc"; ip_addr ^ ":1,to=1024" ]
 		      else [ "-vnc"; ip_addr ^ ":" ^ (string_of_int port); "-k"; keymap ]
 		    in
 				(vga_type_opts @ videoram_opt @ vnc_opts), true
@@ -1695,8 +1699,9 @@ let cmdline_of_info info restore domid =
 	let vlan_id = ref 0 in
 			List.map (fun (mac, bridge, devid) ->
 		let r = [
-		"-net"; sprintf "nic,vlan=%d,macaddr=%s,model=rtl8139" !vlan_id mac;
-		"-net"; sprintf "tap,vlan=%d,bridge=%s,ifname=%s" !vlan_id bridge (Printf.sprintf "tap%d.%d" domid devid)] in
+		"-net"; sprintf "nic,vlan=%d,macaddr=%s,model=e1000" !vlan_id mac;
+		(* "-net"; sprintf "bridge,vlan=%d,br=%s,ifname=%s" !vlan_id bridge (Printf.sprintf "tap%d.%d" domid devid)] in *)
+		"-net"; sprintf "tap,vlan=%d,ifname=%s" !vlan_id (Printf.sprintf "tap%d.%d" domid devid)] in
 		incr vlan_id;
 		r
 			) nics
@@ -1704,20 +1709,24 @@ let cmdline_of_info info restore domid =
 
 	let disks' = List.map (fun (index, file, media) -> [
 		"-drive"; sprintf "file=%s,if=ide,index=%d,media=%s" file index (string_of_media media)
+		(* EDH: this format is deprecated *)
 	]) info.disks in
 
 	let restorefile = sprintf qemu_restore_path domid in
 	let disp_options, wait_for_port = cmdline_of_disp info in
 
 	[
-		"-d"; string_of_int domid;
+		"-xen-domid"; string_of_int domid;
+		"-xen-attach"; (* XXX not sure if this is needed *)
 		"-m"; Int64.to_string (Int64.div info.memory 1024L);
+		"-M"; "xenfv"; 
 		"-boot"; info.boot;
 	] @ (Opt.default [] (Opt.map (fun x -> [ "-serial"; x ]) info.serial)) @ [
-		"-vcpus"; string_of_int info.vcpus;
+		"-smp"; string_of_int info.vcpus;
 	] @ disp_options @ usb' @ List.concat nics' @ List.concat disks'
-	@ (if info.acpi then [ "-acpi" ] else [])
+	@ (if info.acpi then [] else [ "-no-acpi" ])
 	@ (if restore then [ "-loadvm"; restorefile ] else [])
+	(* XXX: everything after this is suspect *)
 	@ (List.fold_left (fun l pci -> "-pciemulation" :: pci :: l) [] (List.rev info.pci_emulations))
 	@ (if info.pci_passthrough then ["-priv"] else [])
 	@ (List.fold_left (fun l (k, v) -> ("-" ^ k) :: (match v with None -> l | Some v -> v :: l)) [] info.extras)
@@ -1827,9 +1836,13 @@ end
 let get_vnc_port ~xs domid = 
 	(* Check whether a qemu exists for this domain *)
 	let qemu_exists = Qemu.is_running ~xs domid in
-	if qemu_exists
+	debug "EDH: qemu_exists: %b" qemu_exists;
+	let port = (if qemu_exists
 	then Dm.get_vnc_port ~xs domid
-	else PV_Vnc.get_vnc_port ~xs domid
+	else PV_Vnc.get_vnc_port ~xs domid)
+	in
+	debug "EDH: get_vnc_port: %s" (match port with None -> "none" | Some x -> (string_of_int x));
+	port
 
 let get_tc_port ~xs domid = 
 	(* Check whether a qemu exists for this domain *)

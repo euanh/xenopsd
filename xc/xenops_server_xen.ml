@@ -2333,6 +2333,14 @@ let init () =
 				info "Written %s to disable the hotplug/udev scripts" disable_udev_path;
 			)
 	end;
+
+	let qmp_dir = Filename.concat (Xenops_utils.get_root ()) "qmp" in
+        let vnc_dir = Filename.concat (Xenops_utils.get_root ()) "vnc" in
+        debug "Creating QMP directory: %s" qmp_dir;
+        Unixext.mkdir_rec qmp_dir 0o0755;
+        debug "Creating VNC directory: %s" vnc_dir;
+        Unixext.mkdir_rec vnc_dir 0o0755;
+
 	(* XXX: is this completely redundant now? The Citrix PV drivers don't need this any more *)
 	(* Special XS entry looked for by the XenSource PV drivers (see xenagentd.hg:src/xad.c) *)
 	let xe_key = "/mh/XenSource-TM_XenEnterprise-TM" in

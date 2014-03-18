@@ -598,6 +598,7 @@ let qemu_media_change ~xs ~device_number domid _type params =
 	let back_dom_path = xs.Xs.getdomainpath 0 in
 	let backend  = sprintf "%s/backend/vbd/%u/%d" back_dom_path domid devid in
 	let path = backend ^ "/params" in
+	debug "qemu_media_change path %s" path;
 
 	(* unfortunately qemu filter the request if on the same string it has,
 	   so we trick it by having a different string, but the same path, adding a
@@ -1721,6 +1722,7 @@ let cmdline_of_info info restore domid =
 		"-m"; Int64.to_string (Int64.div info.memory 1024L);
 		"-M"; "xenfv"; 
 		"-boot"; info.boot;
+		"-qmp"; "unix:" ^ (Filename.concat (Xenops_utils.get_root ()) "qmp/") ^ (string_of_int domid) ^ ",server,nowait"
 	] @ (Opt.default [] (Opt.map (fun x -> [ "-serial"; x ]) info.serial)) @ [
 		"-smp"; string_of_int info.vcpus;
 	] @ disp_options @ usb' @ List.concat nics' @ List.concat disks'

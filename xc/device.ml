@@ -278,6 +278,11 @@ end
 
 module Vbd = struct
 
+let write_string_to_file file s =
+        let fn_write_string fd = Unixext.really_write fd s 0 (String.length s) in
+        Unixext.with_file file [ Unix.O_WRONLY ] 0o640 fn_write_string
+
+
 type shutdown_mode =
 	| Classic (** no signal that backend has flushed, rely on (eg) SM vdi_deactivate for safety *)
     | ShutdownRequest (** explicit signal that backend has flushed via "shutdown-done" *)
@@ -615,7 +620,8 @@ let qemu_media_change ~xs ~device_number domid _type params =
 		"params",         pathtowrite;
 	] in
 	Xs.transaction xs (fun t -> t.Xst.writev backend back_delta);
-	debug "Media changed: params = %s" pathtowrite
+	debug "Media changed: params = %s" pathtowrite;
+	debug (if pathtowrite = "" then "EDH: should eject" else "EDH: should add new device")
 
 let media_tray_is_locked ~xs ~device_number domid =
 	let devid = Device_number.to_xenstore_key device_number in
@@ -627,9 +633,26 @@ let media_tray_is_locked ~xs ~device_number domid =
       false
 
 let media_eject ~xs ~device_number domid =
-	qemu_media_change ~xs ~device_number domid "" ""
+	debug "EDH: Ejecting CD on domain %d" domid;
+        let qmp = Qmp_protocol.connect ((Filename.concat (Xenops_utils.get_root ()) "qmp/") ^ (string_of_int domid)) in
+        Qmp_protocol.negotiate qmp;
+	
+	Qmp_protocol.write qmp (Qmp.Command (None, Qmp.Eject "ide1-cd1"));
+        debug "EDH: Finished ejecting CD on domain %d" domid;
+	Qmp_protocol.close qmp;
+        qemu_media_change ~xs ~device_number domid "" ""
+	(* need to flush the messages first...
+        match Qmp_protocol.read qmp with
+        | Qmp.Success (None, Qmp.Unit) -> 
+             debug "EDH: Successfully ejected CD on domain %d" domid;
+	     qemu_media_change ~xs ~device_number domid "" ""
+        | err -> 
+             debug "EDH: Failed to eject CD on domain %d: %s" domid (Qmp.string_of_message err)
+             (* Raise an exception here *) *)
+
 
 let media_insert ~xs ~device_number ~params ~phystype domid =
+	debug "EDH: Inserting CD on domain %d" domid;
 	let _type = backendty_of_physty phystype in
 	qemu_media_change ~xs ~device_number domid _type params
 

@@ -1831,7 +1831,9 @@ let stop ~xs ~qemu_domid domid  =
 			best_effort "removing core files from /var/xen/qemu"
 				(fun () -> Unix.rmdir ("/var/xen/qemu/"^(string_of_int qemu_pid)));
 			best_effort "removing device model path from xenstore"
-				(fun () -> xs.Xs.rm (device_model_path ~qemu_domid domid))
+				(fun () -> xs.Xs.rm (device_model_path ~qemu_domid domid));
+			best_effort "removing qmp socket"
+				(fun () -> xs.Xs.rm ((Filename.concat (Xenops_utils.get_root ()) "qmp/") ^ (string_of_int domid)))
 
 end
 

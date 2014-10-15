@@ -2398,6 +2398,16 @@ module VM = struct
 		with_xs (fun xs ->
 			with_data ~xs task data false (fun fd ->
 				let vbds = List.filter (fun vbd -> vbd.Vbd.mode = Vbd.ReadOnly) vbds in
+                                let vbds = List.map
+                                        (fun x ->
+                                                (* If receiving an HVM migration from XS 6.2 or earlier, the hd*
+                                                   device names need to be upgraded to xvd*. *)
+                                                let new_device_name =
+                                                        Device_number.upgrade_linux_device (snd x.Vbd.id)
+                                                in
+                                                { x with Vbd.id = (vm.Vm.id, new_device_name) })
+                                        vbds
+                                in
 				debug "Reading save signature";
 				let read_signature = Io.read fd (String.length suspend_save_signature) in
 				if read_signature <> suspend_save_signature then begin
